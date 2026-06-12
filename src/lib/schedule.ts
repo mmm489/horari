@@ -2,6 +2,8 @@ import { Pool } from "pg";
 
 type DbRow = Record<string, unknown>;
 
+const DEFAULT_DASHBOARD_API_BASE_URL = "https://apolodashbprueba.vercel.app";
+
 export interface Employee {
   id: string;
   name: string;
@@ -99,8 +101,7 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
 }
 
 async function getEmployeeScheduleFromApi(token: string, from: string, to: string) {
-  const baseUrl = process.env.HORARI_API_BASE_URL?.replace(/\/+$/, "");
-  if (!baseUrl) return null;
+  const baseUrl = (process.env.HORARI_API_BASE_URL || DEFAULT_DASHBOARD_API_BASE_URL).replace(/\/+$/, "");
 
   const url = new URL(`/api/public-schedule/${encodeURIComponent(token)}`, baseUrl);
   url.searchParams.set("from", from);
