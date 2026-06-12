@@ -62,6 +62,8 @@ async function hasTable(schema: string, table: string) {
 
 export async function getEmployeeScheduleByToken(token: string, from: string, to: string) {
   if (!token || !/^[a-zA-Z0-9_-]{20,100}$/.test(token)) return null;
+  const apiData = await getEmployeeScheduleFromApi(token, from, to);
+  if (apiData) return apiData;
 
   const linkRows = await query<{ employee_id: string; token: string }>(
     `
@@ -93,6 +95,35 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
   return {
     employee,
     shifts: shiftRows.map((row) => mapShift(row, employee.name)),
+  };
+}
+
+async function getEmployeeScheduleFromApi(token: string, from: string, to: string) {
+  const baseUrl = process.env.HORARI_API_BASE_URL?.replace(/\/+$/, "");
+  if (!baseUrl) return null;
+
+  const url = new URL(`/api/public-schedule/${encodeURIComponent(token)}`, baseUrl);
+  url.searchParams.set("from", from);
+  url.searchParams.set("to", to);
+
+  const response = await fetch(url, {
+    headers: { Accept: "application/json" },
+    next: { revalidate: 0 },
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`No se ha podido cargar el horario (${response.status}).`);
+  }
+
+  const data = await response.json() as {
+    employee?: Employee;
+    shifts?: EmployeeScheduleShift[];
+  };
+  if (!data.employee || !Array.isArray(data.shifts)) return null;
+
+  return {
+    employee: data.employee,
+    shifts: data.shifts,
   };
 }
 
