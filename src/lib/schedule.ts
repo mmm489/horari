@@ -18,6 +18,12 @@ export interface EmployeeScheduleShift {
   shiftEnd: string;
 }
 
+export interface EmployeeScheduleData {
+  employee: Employee;
+  shifts: EmployeeScheduleShift[];
+  isPublished: boolean;
+}
+
 let pool: Pool | null = null;
 
 function getDatabaseUrl() {
@@ -81,6 +87,7 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
 
   const employee = await findEmployee(String(link.employee_id));
   if (!employee) return null;
+  const isPublished = await isScheduleWeekPublished(from);
 
   const shiftRows = await query(
     `
@@ -96,8 +103,9 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
 
   return {
     employee,
-    shifts: shiftRows.map((row) => mapShift(row, employee.name)),
-  };
+    isPublished,
+    shifts: isPublished ? shiftRows.map((row) => mapShift(row, employee.name)) : [],
+  } satisfies EmployeeScheduleData;
 }
 
 async function getEmployeeScheduleFromApi(token: string, from: string, to: string) {
@@ -119,13 +127,29 @@ async function getEmployeeScheduleFromApi(token: string, from: string, to: strin
   const data = await response.json() as {
     employee?: Employee;
     shifts?: EmployeeScheduleShift[];
+    isPublished?: boolean;
   };
   if (!data.employee || !Array.isArray(data.shifts)) return null;
 
   return {
     employee: data.employee,
+    isPublished: Boolean(data.isPublished),
     shifts: data.shifts,
-  };
+  } satisfies EmployeeScheduleData;
+}
+
+async function isScheduleWeekPublished(weekStart: string) {
+  if (!(await hasTable("public", "employee_schedule_week_publications"))) return false;
+  const rows = await query<{ is_visible: boolean }>(
+    `
+      SELECT is_visible
+      FROM employee_schedule_week_publications
+      WHERE week_start = $1::date
+      LIMIT 1
+    `,
+    [weekStart],
+  );
+  return Boolean(rows[0]?.is_visible);
 }
 
 async function findEmployee(employeeId: string): Promise<Employee | null> {

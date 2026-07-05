@@ -69,6 +69,16 @@ export default async function EmployeeSchedulePage({
         </div>
       </section>
 
+      {!data.isPublished ? (
+        <section className="card week unpublished">
+          <div className="week-head">
+            <h2>Horari pendent</h2>
+            <p className="muted">
+              Aquesta setmana encara no esta publicada. L'encarregat esta preparant els torns.
+            </p>
+          </div>
+        </section>
+      ) : (
       <section className="card week">
         <div className="week-head">
           <h2>Setmana</h2>
@@ -102,6 +112,7 @@ export default async function EmployeeSchedulePage({
           })}
         </div>
       </section>
+      )}
 
       <nav className="nav">
         <Link href={`/${token}?week=${previousWeek}`}>Anterior</Link>
