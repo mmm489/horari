@@ -16,10 +16,14 @@ export interface EmployeeScheduleShift {
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  scheduleKind: "operational" | "contractual";
 }
 
 export interface EmployeeScheduleData {
   employee: Employee;
+  operationalShifts: EmployeeScheduleShift[];
+  contractualShifts: EmployeeScheduleShift[];
+  /** Compatibility alias for older clients. */
   shifts: EmployeeScheduleShift[];
   isPublished: boolean;
 }
@@ -91,7 +95,8 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
 
   const shiftRows = await query(
     `
-      SELECT id, employee_id, business_date, shift_start, shift_end
+      SELECT id, employee_id, business_date, shift_start, shift_end,
+             COALESCE(schedule_kind, 'operational') AS schedule_kind
       FROM employee_schedule_shifts
       WHERE employee_id = $1
         AND business_date >= $2::date
@@ -101,10 +106,15 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
     [employee.id, from, to],
   );
 
+  const allShifts = shiftRows.map((row) => mapShift(row, employee.name));
+  const operationalShifts = allShifts.filter((shift) => shift.scheduleKind === "operational");
+  const contractualShifts = allShifts.filter((shift) => shift.scheduleKind === "contractual");
   return {
     employee,
     isPublished,
-    shifts: isPublished ? shiftRows.map((row) => mapShift(row, employee.name)) : [],
+    shifts: isPublished ? operationalShifts : [],
+    operationalShifts: isPublished ? operationalShifts : [],
+    contractualShifts: isPublished ? contractualShifts : [],
   } satisfies EmployeeScheduleData;
 }
 
@@ -127,14 +137,20 @@ async function getEmployeeScheduleFromApi(token: string, from: string, to: strin
   const data = await response.json() as {
     employee?: Employee;
     shifts?: EmployeeScheduleShift[];
+    operationalShifts?: EmployeeScheduleShift[];
+    contractualShifts?: EmployeeScheduleShift[];
     isPublished?: boolean;
   };
   if (!data.employee || !Array.isArray(data.shifts)) return null;
 
+  const operationalShifts = Array.isArray(data.operationalShifts) ? data.operationalShifts : data.shifts;
+  const contractualShifts = Array.isArray(data.contractualShifts) ? data.contractualShifts : [];
   return {
     employee: data.employee,
     isPublished: Boolean(data.isPublished),
-    shifts: data.shifts,
+    shifts: operationalShifts,
+    operationalShifts,
+    contractualShifts,
   } satisfies EmployeeScheduleData;
 }
 
@@ -190,6 +206,7 @@ function mapShift(row: DbRow, employeeName: string): EmployeeScheduleShift {
     businessDate: normalizeDate(row.business_date),
     shiftStart: String(row.shift_start),
     shiftEnd: String(row.shift_end),
+    scheduleKind: row.schedule_kind === "contractual" ? "contractual" : "operational",
   };
 }
 
