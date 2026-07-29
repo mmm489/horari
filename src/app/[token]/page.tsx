@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { TimeClockCorrectionForm } from "@/components/time-clock-correction-form";
 import { getEmployeeScheduleByToken, type EmployeeScheduleShift } from "@/lib/schedule";
 import {
   addDays,
@@ -100,6 +101,13 @@ export default async function EmployeeSchedulePage({
         <Link href={`/${token}?week=${previousWeek}`}>Anterior</Link>
         <Link href={`/${token}?week=${nextWeek}`}>Seguent</Link>
       </nav>
+
+      <TimeClockCorrectionForm
+        token={token}
+        from={from}
+        to={to}
+        operationalShifts={data.operationalShifts}
+      />
 
       <p className="foot">
         Si veus algun error, parla amb l'encarregat abans del torn.
