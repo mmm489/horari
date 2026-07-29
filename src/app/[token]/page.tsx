@@ -85,6 +85,7 @@ export default async function EmployeeSchedulePage({
             description="Distribucio de les teves hores contractades."
             days={days}
             groups={contractualGroups}
+            restDays={data.restDays}
             kind="contractual"
           />
           {data.contractualShifts.length === 0 && (
@@ -121,12 +122,14 @@ function ScheduleWeek({
   description,
   days,
   groups,
+  restDays = [],
   kind,
 }: {
   title: string;
   description: string;
   days: string[];
   groups: Map<string, EmployeeScheduleShift[]>;
+  restDays?: string[];
   kind: "operational" | "contractual";
 }) {
   return (
@@ -138,13 +141,16 @@ function ScheduleWeek({
       <div className="days">
         {days.map((day) => {
           const shifts = groups.get(day) ?? [];
+          const isRestDay = restDays.includes(day);
           return (
             <div key={day} className="day">
               <div>
                 <p className="day-title">{formatWeekday(day)}</p>
                 <p className="day-date">{formatDate(day)}</p>
               </div>
-              {shifts.length > 0 ? (
+              {isRestDay ? (
+                <div className="free">Dia de descans</div>
+              ) : shifts.length > 0 ? (
                 <div className="shift-list">
                   {shifts.map((shift) => (
                     <div key={shift.id} className="shift">

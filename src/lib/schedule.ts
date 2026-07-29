@@ -23,6 +23,7 @@ export interface EmployeeScheduleData {
   employee: Employee;
   operationalShifts: EmployeeScheduleShift[];
   contractualShifts: EmployeeScheduleShift[];
+  restDays: string[];
   /** Compatibility alias for older clients. */
   shifts: EmployeeScheduleShift[];
   isPublished: boolean;
@@ -109,12 +110,14 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
   const allShifts = shiftRows.map((row) => mapShift(row, employee.name));
   const operationalShifts = allShifts.filter((shift) => shift.scheduleKind === "operational");
   const contractualShifts = allShifts.filter((shift) => shift.scheduleKind === "contractual");
+  const restDays = await listRestDays(employee.id, from);
   return {
     employee,
     isPublished,
     shifts: isPublished ? operationalShifts : [],
     operationalShifts: isPublished ? operationalShifts : [],
     contractualShifts: isPublished ? contractualShifts : [],
+    restDays: isPublished ? restDays : [],
   } satisfies EmployeeScheduleData;
 }
 
@@ -139,6 +142,7 @@ async function getEmployeeScheduleFromApi(token: string, from: string, to: strin
     shifts?: EmployeeScheduleShift[];
     operationalShifts?: EmployeeScheduleShift[];
     contractualShifts?: EmployeeScheduleShift[];
+    restDays?: string[];
     isPublished?: boolean;
   };
   if (!data.employee || !Array.isArray(data.shifts)) return null;
@@ -151,7 +155,23 @@ async function getEmployeeScheduleFromApi(token: string, from: string, to: strin
     shifts: operationalShifts,
     operationalShifts,
     contractualShifts,
+    restDays: Array.isArray(data.restDays) ? data.restDays : [],
   } satisfies EmployeeScheduleData;
+}
+
+async function listRestDays(employeeId: string, weekStart: string) {
+  if (!(await hasTable("public", "employee_schedule_week_settings"))) return [];
+  const rows = await query<{ rest_date: unknown }>(
+    `
+      SELECT rest_date
+      FROM employee_schedule_week_settings
+      WHERE employee_id = $1
+        AND week_start = $2::date
+      ORDER BY rest_date ASC
+    `,
+    [employeeId, weekStart],
+  );
+  return rows.map((row) => normalizeDate(row.rest_date));
 }
 
 async function isScheduleWeekPublished(weekStart: string) {
