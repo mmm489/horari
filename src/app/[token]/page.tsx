@@ -106,7 +106,6 @@ export default async function EmployeeSchedulePage({
         token={token}
         from={from}
         to={to}
-        operationalShifts={data.operationalShifts}
       />
 
       <p className="foot">

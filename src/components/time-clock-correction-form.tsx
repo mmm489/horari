@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-
-import type { EmployeeScheduleShift } from "@/lib/schedule";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 type CorrectionType = "clock_in" | "clock_out" | "full_session";
 
@@ -16,20 +14,29 @@ interface CorrectionRequest {
   createdAt: string;
 }
 
+interface TimeClockIncident {
+  id: string;
+  scheduleShiftId: string;
+  businessDate: string;
+  requestType: CorrectionType;
+  shiftStart: string;
+  shiftEnd: string;
+  suggestedClockInTime: string | null;
+  suggestedClockOutTime: string | null;
+}
+
 export function TimeClockCorrectionForm({
   token,
   from,
   to,
-  operationalShifts,
 }: {
   token: string;
   from: string;
   to: string;
-  operationalShifts: EmployeeScheduleShift[];
 }) {
   const [open, setOpen] = useState(false);
-  const [requestType, setRequestType] = useState<CorrectionType>("clock_in");
-  const [businessDate, setBusinessDate] = useState(from);
+  const [incidents, setIncidents] = useState<TimeClockIncident[]>([]);
+  const [selectedIncidentId, setSelectedIncidentId] = useState("");
   const [clockInTime, setClockInTime] = useState("");
   const [clockOutTime, setClockOutTime] = useState("");
   const [pin, setPin] = useState("");
@@ -39,38 +46,44 @@ export function TimeClockCorrectionForm({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const shiftsByDate = useMemo(() => {
-    const map = new Map<string, EmployeeScheduleShift[]>();
-    for (const shift of operationalShifts) {
-      const current = map.get(shift.businessDate) ?? [];
-      current.push(shift);
-      map.set(shift.businessDate, current);
-    }
-    return map;
-  }, [operationalShifts]);
+  const selectedIncident = useMemo(
+    () => incidents.find((item) => item.id === selectedIncidentId) ?? null,
+    [incidents, selectedIncidentId],
+  );
 
   useEffect(() => {
-    const shifts = shiftsByDate.get(businessDate) ?? [];
-    if (shifts.length === 0) return;
-    setClockInTime(shifts[0].shiftStart);
-    setClockOutTime(shifts[shifts.length - 1].shiftEnd);
-  }, [businessDate, shiftsByDate]);
+    if (!selectedIncident) return;
+    setClockInTime(selectedIncident.suggestedClockInTime ?? "");
+    setClockOutTime(selectedIncident.suggestedClockOutTime ?? "");
+  }, [selectedIncident]);
 
   useEffect(() => {
-    loadRequests();
+    loadData();
   }, [from, to]);
 
-  async function loadRequests() {
+  async function loadData() {
     try {
-      const params = new URLSearchParams({ from, to });
+      const today = madridDateOnly();
+      const params = new URLSearchParams({
+        from: addDateDays(today, -31),
+        to: today,
+      });
       const response = await fetch(`/api/time-clock-corrections/${encodeURIComponent(token)}?${params}`, {
         cache: "no-store",
       });
       if (!response.ok) return;
       const body = await response.json();
       setRequests(Array.isArray(body.requests) ? body.requests : []);
+      const nextIncidents: TimeClockIncident[] = Array.isArray(body.incidents) ? body.incidents : [];
+      setIncidents(nextIncidents);
+      setSelectedIncidentId((current) => (
+        nextIncidents.some((item: TimeClockIncident) => item.id === current)
+          ? current
+          : nextIncidents[0]?.id ?? ""
+      ));
+      if (nextIncidents.length > 0) setOpen(true);
     } catch {
-      // The form remains usable if status history is temporarily unavailable.
+      // The schedule remains visible if incident history is temporarily unavailable.
     }
   }
 
@@ -80,15 +93,17 @@ export function TimeClockCorrectionForm({
     setMessage(null);
     setError(null);
     try {
+      if (!selectedIncident) throw new Error("Selecciona un fitxatge pendent.");
       const response = await fetch(`/api/time-clock-corrections/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pin,
-          businessDate,
-          requestType,
-          clockInTime: requestType === "clock_out" ? null : clockInTime,
-          clockOutTime: requestType === "clock_in" ? null : clockOutTime,
+          scheduleShiftId: selectedIncident.scheduleShiftId,
+          businessDate: selectedIncident.businessDate,
+          requestType: selectedIncident.requestType,
+          clockInTime: selectedIncident.requestType === "clock_out" ? null : clockInTime,
+          clockOutTime: selectedIncident.requestType === "clock_in" ? null : clockOutTime,
           reason,
         }),
       });
@@ -97,7 +112,7 @@ export function TimeClockCorrectionForm({
       setMessage("Sol.licitud enviada. Queda pendent de revisio.");
       setPin("");
       setReason("");
-      await loadRequests();
+      await loadData();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "No s'ha pogut enviar.");
     } finally {
@@ -109,40 +124,52 @@ export function TimeClockCorrectionForm({
     <section className="card correction-card">
       <button type="button" className="correction-toggle" onClick={() => setOpen((value) => !value)}>
         <span>
-          <strong>Has oblidat fitxar?</strong>
-          <small>Envia una correccio d'entrada o sortida.</small>
+          <strong>
+            {incidents.length > 0
+              ? `Fitxatges pendents (${incidents.length})`
+              : "Fitxatges al dia"}
+          </strong>
+          <small>
+            {incidents.length > 0
+              ? "El sistema ha detectat fitxatges que falten."
+              : "No hi ha incidencies detectades."}
+          </small>
         </span>
         <span className="correction-toggle-icon">{open ? "-" : "+"}</span>
       </button>
 
-      {open && (
+      {open && incidents.length > 0 && (
         <form className="correction-form" onSubmit={submit}>
-          <div className="correction-tabs" role="group" aria-label="Tipus de correccio">
-            <TypeButton active={requestType === "clock_in"} onClick={() => setRequestType("clock_in")}>
-              Entrada
-            </TypeButton>
-            <TypeButton active={requestType === "clock_out"} onClick={() => setRequestType("clock_out")}>
-              Sortida
-            </TypeButton>
-            <TypeButton active={requestType === "full_session"} onClick={() => setRequestType("full_session")}>
-              Jornada
-            </TypeButton>
+          <div className="incident-options" role="listbox" aria-label="Fitxatges pendents">
+            {incidents.map((incident) => (
+              <button
+                key={incident.id}
+                type="button"
+                role="option"
+                aria-selected={incident.id === selectedIncidentId}
+                className={`incident-option${incident.id === selectedIncidentId ? " active" : ""}`}
+                onClick={() => setSelectedIncidentId(incident.id)}
+              >
+                <span className="incident-option-main">
+                  <strong>{incidentLabel(incident.requestType)}</strong>
+                  <span>{formatShortDate(incident.businessDate)}</span>
+                </span>
+                <span className="incident-option-time">
+                  Horari {incident.shiftStart.slice(0, 5)} - {incident.shiftEnd.slice(0, 5)}
+                </span>
+              </button>
+            ))}
           </div>
 
-          <label>
-            Dia
-            <input
-              type="date"
-              min={from}
-              max={to}
-              value={businessDate}
-              onChange={(event) => setBusinessDate(event.target.value)}
-              required
-            />
-          </label>
+          {selectedIncident && (
+            <p className="incident-summary">
+              Correccio per al {formatShortDate(selectedIncident.businessDate)}.
+              Revisa l'hora proposada abans d'enviar-la.
+            </p>
+          )}
 
           <div className="correction-time-grid">
-            {requestType !== "clock_out" && (
+            {selectedIncident?.requestType !== "clock_out" && (
               <label>
                 Hora d'entrada
                 <input
@@ -153,7 +180,7 @@ export function TimeClockCorrectionForm({
                 />
               </label>
             )}
-            {requestType !== "clock_in" && (
+            {selectedIncident?.requestType !== "clock_in" && (
               <label>
                 Hora de sortida
                 <input
@@ -201,9 +228,15 @@ export function TimeClockCorrectionForm({
         </form>
       )}
 
+      {open && incidents.length === 0 && (
+        <p className="correction-empty">
+          No tens cap fitxatge pendent de corregir.
+        </p>
+      )}
+
       {requests.length > 0 && (
         <div className="correction-history">
-          <p className="correction-history-title">Sol.licituds d'aquesta setmana</p>
+          <p className="correction-history-title">Sol.licituds recents</p>
           {requests.map((item) => (
             <div key={item.id} className="correction-history-row">
               <span>{formatShortDate(item.businessDate)} - {typeLabel(item.requestType)}</span>
@@ -213,22 +246,6 @@ export function TimeClockCorrectionForm({
         </div>
       )}
     </section>
-  );
-}
-
-function TypeButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button type="button" className={active ? "active" : ""} onClick={onClick}>
-      {children}
-    </button>
   );
 }
 
@@ -249,7 +266,28 @@ function typeLabel(value: CorrectionType) {
   return "Jornada";
 }
 
+function incidentLabel(value: CorrectionType) {
+  if (value === "clock_in") return "Falta l'entrada";
+  if (value === "clock_out") return "Falta la sortida";
+  return "Falta tota la jornada";
+}
+
 function formatShortDate(value: string) {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function madridDateOnly() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function addDateDays(value: string, amount: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + amount));
+  return date.toISOString().slice(0, 10);
 }
