@@ -50,6 +50,10 @@ export function TimeClockCorrectionForm({
     () => incidents.find((item) => item.id === selectedIncidentId) ?? null,
     [incidents, selectedIncidentId],
   );
+  const missingPunches = incidents.reduce(
+    (total, incident) => total + (incident.requestType === "full_session" ? 2 : 1),
+    0,
+  );
 
   useEffect(() => {
     if (!selectedIncident) return;
@@ -126,7 +130,7 @@ export function TimeClockCorrectionForm({
         <span>
           <strong>
             {incidents.length > 0
-              ? `Fitxatges pendents (${incidents.length})`
+              ? `Fitxatges pendents (${missingPunches})`
               : "Fitxatges al dia"}
           </strong>
           <small>
@@ -269,7 +273,7 @@ function typeLabel(value: CorrectionType) {
 function incidentLabel(value: CorrectionType) {
   if (value === "clock_in") return "Falta l'entrada";
   if (value === "clock_out") return "Falta la sortida";
-  return "Falta tota la jornada";
+  return "Falten l'entrada i la sortida del torn";
 }
 
 function formatShortDate(value: string) {
